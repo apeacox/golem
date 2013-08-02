@@ -35,6 +35,8 @@ type Router struct {
 	extensions map[reflect.Type]reflect.Value
 	// Function being called if connection is closed.
 	closeFunc func(*Connection)
+  // Function that manipilates a Connection
+	connectionFunc func(http.ResponseWriter, *http.Request, *Connection) *Connection
 	// Function verifying handshake.
 	handshakeFunc func(http.ResponseWriter, *http.Request) bool
 	// Active protocol
@@ -54,6 +56,7 @@ func NewRouter() *Router {
 		callbacks:                make(map[string]func(*Connection, interface{})),
 		extensions:               make(map[reflect.Type]reflect.Value),
 		closeFunc:                func(*Connection) {},                                          // Empty placeholder close function.
+		connectionFunc:           func(w http.ResponseWriter, r *http.Request, c *Connection) *Connection { return c }, // Empty placeholder callback function.
 		handshakeFunc:            func(http.ResponseWriter, *http.Request) bool { return true }, // Handshake always allowed.
 		protocol:                 initialProtocol,
 		useHeartbeats:            true,
@@ -91,9 +94,9 @@ func (router *Router) Handler() func(http.ResponseWriter, *http.Request) {
 			return
 		}
 
-		// Create the connection.
-		conn := newConnection(socket, router)
-		//
+		// Create the connection and manipulate it
+    conn := router.connectionFunc(w, r, newConnection(socket, router));
+
 		if router.connExtensionConstructor.IsValid() {
 			conn.extend(router.connExtensionConstructor.Call([]reflect.Value{reflect.ValueOf(conn)})[0].Interface())
 		}
@@ -228,6 +231,13 @@ func (router *Router) OnClose(callback func(*Connection)) {
 // If the handshake function returns false the request will not be upgraded.
 func (router *Router) OnHandshake(callback func(http.ResponseWriter, *http.Request) bool) {
 	router.handshakeFunc = callback
+}
+
+
+// OnConnection sets the callback after the Connection is opened
+// It lets to operate on custom Connections (eg: set values from sessions) and returns the elaborated *Connection
+func (router *Router) OnConnection(callback func(http.ResponseWriter, *http.Request, *Connection) *Connection) {
+	router.connectionFunc = callback
 }
 
 // The AddProtocolExtension-function allows adding of custom parsers for custom types. For any Type T
